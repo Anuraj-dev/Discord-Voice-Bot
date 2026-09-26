@@ -1,5 +1,5 @@
 // Tejas voice bot: listens in a Discord VC, transcribes locally with faster-whisper (stt.py),
-// thinks with `claude -p` (Raja's Claude Code login, no API key), speaks via edge-tts.
+// thinks with the host's authenticated `claude -p` CLI, speaks via edge-tts.
 import { Client, GatewayIntentBits, Events, MessageFlags } from 'discord.js';
 import {
   joinVoiceChannel, getVoiceConnection, createAudioPlayer, createAudioResource,
@@ -196,7 +196,7 @@ client.on(Events.InteractionCreate, async i => {
   sessions.set(i.guildId, s);
   listen(i.guild, connection, s);
   connection.on(VoiceConnectionStatus.Disconnected, () => { connection.destroy(); sessions.delete(i.guildId); });
-  await i.editReply(`🎙️ **Tejas joined ${channel.name}.** Heads up: while I'm here, speech in this VC is transcribed on Raja's machine so I can reply. Say "Tejas" to talk to me; \`/leave\` to kick me.`);
+  await i.editReply(`🎙️ **Tejas joined ${channel.name}.** Heads up: while I'm here, speech in this VC is transcribed on the machine running the bot so I can reply. Say "Tejas" to talk to me; \`/leave\` to kick me.`);
   s.player.play(createAudioResource(SONG)); // entrance song (song/generate.py, fallback make_song.py)
   // speak() waits for the song to finish, then Tejas greets in its normal voice.
   speak(s, 'Arre hello Team Tejas! Main aa gaya. Just say Tejas when you want me.').catch(e => console.error('[error]', e.message));
