@@ -1,0 +1,10 @@
+.env
+.venv/
+node_modules/
+/tools/
+/song/out/
+/song/gen.log
+/song.raw.wav
+/bot.log
+__pycache__/
+*.py[cod]
