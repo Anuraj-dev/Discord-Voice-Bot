@@ -112,3 +112,7 @@ tools/ACE-Step-1.5/.venv/bin/python song/generate.py 2
 ```
 
 Candidates go to `song/out/`, which Git ignores. The script prints one JSON line per candidate with its path and seed. Copy the one you pick over `song.wav`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
