@@ -1,59 +1,114 @@
-# Discord Voice Bot
+<h1 align="center">Discord Voice Bot</h1>
 
-A Discord voice companion for Team TEJAS. It joins a voice channel, transcribes speech with local Whisper, responds to “Tejas” (and short follow-ups), and speaks replies aloud.
+<p align="center">
+  A Discord voice bot for Team TEJAS that transcribes voice chat on your own machine.<br />
+  Say "Tejas" in a voice channel and it answers out loud.
+</p>
 
-## What it uses
+<p align="center">
+  <a href="#running-it">Running it</a>
+  ·
+  <a href="#commands">Commands</a>
+  ·
+  <a href="#voice-and-privacy">Voice and privacy</a>
+</p>
 
-- Discord.js and `@discordjs/voice` for Discord commands and voice audio.
-- `faster-whisper` for speech recognition. The model runs on this machine, using CUDA when available and CPU otherwise. The default `large-v3-turbo` model downloads on first start.
-- The Claude Code CLI (`claude -p --model haiku`) to draft replies from recent recognized speech. Install and authenticate the CLI on the machine running the bot.
-- `uvx edge-tts` for speech output. It downloads the Edge TTS runner on first use and needs an internet connection.
-- `ffmpeg` to convert incoming Discord audio for transcription.
+The bot joins a Discord voice channel and listens to everyone in it. faster-whisper transcribes each speaker on the machine that runs the bot. When someone says the name, the Claude Code CLI drafts a reply from the last 30 lines of chat, and Edge TTS speaks it back into the channel.
 
-## Requirements
+It runs as one Node.js process that starts a Python speech worker. You need a Discord bot token, `ffmpeg` and `uv` on your `PATH`, and the Claude Code CLI logged in on the same machine. A CUDA GPU is optional and used when it works.
 
-- Node.js 22.12 or newer.
-- Python 3.10 or newer.
-- `ffmpeg`, `uv`, and the authenticated Claude Code CLI available on `PATH`.
-- A Discord application with a bot user and a token.
+## What you get
 
-CUDA is optional. The speech worker tries CUDA and falls back to CPU if it cannot initialize the GPU model.
+- **Speech stays on the host.** Each clip goes to a faster-whisper model on this machine. The model loads on CUDA in float16 and falls back to CPU int8 when CUDA fails to initialize.
+- **English or Hindi, picked per clip.** `stt.py` compares the English and Hindi probabilities for each clip and transcribes in the higher one. The name "Tejas" is passed as a hotword to bias recognition toward it.
+- **Wake word, then a short follow-up.** Saying "Tejas" or a close spelling such as "tejus" or "teja" starts a reply. The bot also answers to "Claude". After it replies to someone, that person's next line of three or more words gets a reply for 25 seconds without the wake word.
+- **Short spoken replies.** The Claude Code CLI runs on the haiku model with no tools and no MCP servers. Its system prompt asks for one to three short sentences with no markdown, lists or URLs, because text to speech reads the reply aloud.
+- **Clips end at silence.** A speaker's clip closes after 900 ms of silence. Clips shorter than 0.6 seconds are dropped before they reach Whisper.
+- **One reply at a time.** The bot handles one clip at a time per server, in arrival order. It waits for the entrance song or the previous reply to finish before it speaks.
+- **Noise filter.** Bracketed annotations such as `[Music]` are stripped from the transcript. Empty results and common Whisper hallucinations such as "thank you" or "bye" are discarded.
 
-## Setup
+## Running it
 
-1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a bot and invite it with the `bot` and `applications.commands` scopes. Grant it permission to view the voice channel, connect, and speak.
-2. Create the local environment files and install dependencies:
+Run the bot from a checkout of this repository on Linux or macOS.
 
-   ```sh
-   cp .env.example .env
-   npm install
-   python3 -m venv .venv
-   . .venv/bin/activate
-   python -m pip install -r requirements.txt
-   ```
+### Requirements
 
-3. Put the bot token in `.env` as `DISCORD_TOKEN=...`. Keep `.env` private; it is ignored by Git.
-4. Start the bot:
+- Node.js 22.12 or newer. `@discordjs/voice` requires it, as the lockfile records.
+- Python 3 with `venv`.
+- `ffmpeg` and `uv` on `PATH`. The bot runs `ffmpeg` to convert audio and `uvx edge-tts` to speak.
+- The Claude Code CLI on `PATH`, installed and logged in as the user that runs the bot.
+- A Discord application with a bot user.
+- An NVIDIA GPU with CUDA, which is not required.
 
-   ```sh
-   npm start
-   ```
+### Create the Discord bot
 
-The first run downloads the Whisper model. Use `STT_MODEL` to select another faster-whisper model, or `TTS_VOICE` to change the Edge TTS voice. Defaults are `large-v3-turbo` and `en-IN-PrabhatNeural`.
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application and add a bot user. Copy the bot token.
+2. Invite the bot with the `bot` and `applications.commands` scopes. Grant View Channel, Connect and Speak on the voice channels it should use.
+3. No privileged intents are needed. The bot requests only the Guilds and Guild Voice States intents.
+
+### Install and start
+
+```sh
+cp .env.example .env
+npm install
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Set `DISCORD_TOKEN` in `.env` to the bot token. Git ignores `.env`, so keep it out of commits.
+
+```sh
+npm start
+```
+
+The bot starts the speech worker with `.venv/bin/python`. Create the virtual environment as `.venv` in the repository root. Windows puts the interpreter under `.venv\Scripts`, which the bot does not look for.
+
+The first start downloads the Whisper model. Wait for `STT ready on cuda` or `STT ready on cpu` in the log before you test a channel.
+
+### Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | none, required | Bot token. The bot exits at startup without it. |
+| `STT_MODEL` | `large-v3-turbo` | faster-whisper model for the speech worker. Downloaded on first use. |
+| `TTS_VOICE` | `en-IN-PrabhatNeural` | Edge TTS voice for replies and the greeting. |
 
 ## Commands
 
-- `/join` joins your current voice channel and starts listening.
-- `/leave` disconnects the bot.
-- `/song` plays the vocal Team TEJAS anthem.
-- `/fallback` plays the instrumental track.
+- `/join` joins your current voice channel and starts listening. It plays `song.wav` as an entrance track, then Tejas greets the channel. Running `/join` again moves the bot to your channel.
+- `/leave` disconnects the bot and clears its chat history.
+- `/song` plays `song.wav`. Run `/join` first.
+- `/fallback` plays `song-instrumental.wav`. Run `/join` first.
 
-The bot registers these commands in the guilds it can see when it starts. While it is connected, recognized speech is used to decide whether to reply. Say “Tejas” to start a conversation; the speaker's next line can omit the wake word for 25 seconds.
+The bot registers these commands in each server it can see at startup. A server you invite it to later needs a restart before the commands appear.
 
 ## Voice and privacy
 
-When `/join` succeeds, the bot posts a notice in the text channel. Audio is transcribed on the machine running the bot. Recent recognized text is sent to the configured Claude Code CLI to produce replies, and Edge TTS uses an online service to synthesize those replies. Use `/leave` to stop voice capture. Do not run this bot in a channel without telling its members how it processes speech.
+When `/join` succeeds, the bot posts a notice in the text channel where you ran the command. The notice says that speech is transcribed on the bot's machine.
 
-## Music tools
+- Incoming audio is transcribed on the bot's machine. The bot does not send audio to a speech service.
+- The last 30 recognized lines go to the Claude Code CLI, which sends them to the model provider behind your login.
+- Reply text goes to an online Edge TTS service to produce speech.
+- Chat history lives in memory only. `/leave`, a disconnect or a restart clears it.
+- `/leave` stops voice capture.
 
-The two WAV files in the repository are the bot's default tracks. `make_song.py` can synthesize an instrumental `song.wav` with NumPy and `ffmpeg`; running it replaces the vocal track. `song/generate.py` generates vocal candidates with ACE-Step 1.5 and a local CUDA setup. That large external checkout and its model weights are intentionally not included; place the checkout at `tools/ACE-Step-1.5` before using that script. Generated candidates go to the ignored `song/out/` directory.
+Do not run this bot in a channel without telling its members how it processes speech.
+
+## Music
+
+`song.wav` is the entrance and `/song` track. `song-instrumental.wav` is the `/fallback` track. Both ship with the repository.
+
+`make_song.py` synthesizes a new instrumental `song.wav` with NumPy and `ffmpeg`. It uses no samples and no speech synthesis. It builds a 140 BPM track in F minor and overwrites `song.wav` when it runs.
+
+```sh
+.venv/bin/python make_song.py
+```
+
+`song/generate.py` generates sung candidates with ACE-Step 1.5, using the lyrics in `song/lyrics.txt`. It runs on a local CUDA GPU and is tuned for an 8 GB card. The ACE-Step checkout and its model weights are not in this repository. Place the checkout at `tools/ACE-Step-1.5` first.
+
+```sh
+tools/ACE-Step-1.5/.venv/bin/python song/generate.py 2
+```
+
+Candidates go to `song/out/`, which Git ignores. The script prints one JSON line per candidate with its path and seed. Copy the one you pick over `song.wav`.
